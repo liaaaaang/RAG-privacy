@@ -27,14 +27,22 @@ import argparse
 from typing import List
 from chardet.universaldetector import UniversalDetector
 
+from dotenv import load_dotenv
+
 import torch
-import langchain
 from langchain_community.vectorstores import Chroma
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_loaders import TextLoader
 from langchain.text_splitter import TextSplitter, RecursiveCharacterTextSplitter
 from nltk.tokenize import RegexpTokenizer
+
+
+load_dotenv()
+
+DATA_ROOT = os.path.expanduser(os.getenv('DATA_ROOT', 'Data'))
+EMBEDDING_MODEL_NAME = os.path.expanduser(os.getenv('EMBEDDING_MODEL_NAME', 'all-MiniLM-L6-v2'))
+
 
 
 def find_all_file(path: str) -> List[str]:
@@ -83,6 +91,9 @@ def get_embed_model(encoder_model_name: str,
     :return:
         the embedding model
     """
+    if not encoder_model_name:
+        encoder_model_name = EMBEDDING_MODEL_NAME
+
     if encoder_model_name == 'open-ai':
         embed_model = OpenAIEmbeddings()
     elif encoder_model_name == 'all-MiniLM-L6-v2':
@@ -110,8 +121,8 @@ def get_embed_model(encoder_model_name: str,
                 model_kwargs={'device': device},
                 encode_kwargs={'device': device, 'batch_size': retrival_database_batch_size},
             )
-        except encoder_model_name:
-            raise Exception(f"Encoder {encoder_model_name} not found, please check.")
+        except Exception as exc:
+            raise Exception(f"Encoder {encoder_model_name} not found, please check.") from exc
     return embed_model
 
 
@@ -129,7 +140,7 @@ def pre_process_dataset(data_name: str, change_method: str = 'body') -> None:
         pre_process_enron_mail: how we pre-process the enron mail dataset
     """
 
-    data_store_path = 'Data'
+    data_store_path = DATA_ROOT
 
     def pre_process_chatdoctor() -> None:
         """
@@ -137,11 +148,11 @@ def pre_process_dataset(data_name: str, change_method: str = 'body') -> None:
             "If you are a doctor, please answer the medical questions based on the patient's description."
         In a retrieval dataset, the instruction is in no need.
         """
-        file_path = os.path.join(data_store_path, 'chatdoctor200k/chatdoctor200k.json')
+        file_path = os.path.join(data_store_path, 'chatdoctor200k', 'chatdoctor200k.json')
         with open(file_path, 'r') as f:
             content = f.read()
             data = json.loads(content)
-        output_path = os.path.join(data_store_path, 'chatdoctor/chatdoctor.txt')
+        output_path = os.path.join(data_store_path, 'chatdoctor', 'chatdoctor.txt')
         with open(output_path, 'w', encoding="utf-8") as f:
             max_len = 0
             for i, item in enumerate(data):
@@ -185,7 +196,8 @@ def pre_process_dataset(data_name: str, change_method: str = 'body') -> None:
                 if new_content != "" and new_content[-1] != '.' and new_content[-1] != '?' and new_content[-1] != '!':
                     new_content += '.'
             if len(new_content) != 0:
-                path = f'Data/enron-mail-{change_method}/' + file_name[16:] + '.txt'
+                relative_file = os.path.relpath(file_name, data_path)
+                path = os.path.join(data_store_path, f'enron-mail-{change_method}', relative_file + '.txt')
                 num_file += 1
                 if not os.path.exists(os.path.dirname(path)):
                     os.makedirs(os.path.dirname(path))
@@ -209,13 +221,15 @@ def split_dataset(data_name: str, split_ratio: int = 0.99, num_eval: int = 1000,
         max_que_len: max length of the input of the evaluation for enron-mail
     the train-set and the test-set will be stored at folder {data_name}-train and {data_name}-test
     """
-    data_store_path = 'Data'
+    data_store_path = DATA_ROOT
     if data_name == 'chatdoctor':
-        with open('Data/chatdoctor/chatdoctor.txt', 'r', encoding="utf-8") as f:
+        with open(os.path.join(data_store_path, 'chatdoctor', 'chatdoctor.txt'), 'r', encoding="utf-8") as f:
             data = f.read()
         data = data.split('\n\n')
-        output_train_path = os.path.join(data_store_path, 'chatdoctor-train/chatdoctor.txt')
-        output_test_path = os.path.join(data_store_path, 'chatdoctor-test/chatdoctor.txt')
+        output_train_path = os.path.join(data_store_path, 'chatdoctor-train', 'chatdoctor.txt')
+        output_test_path = os.path.join(data_store_path, 'chatdoctor-test', 'chatdoctor.txt')
+        os.makedirs(os.path.dirname(output_train_path), exist_ok=True)
+        os.makedirs(os.path.dirname(output_test_path), exist_ok=True)
         num_ = int(split_ratio * len(data))
         random.shuffle(data)
         with open(output_train_path, 'w', encoding="utf-8") as f:
@@ -232,9 +246,11 @@ def split_dataset(data_name: str, split_ratio: int = 0.99, num_eval: int = 1000,
             item = e_data.split('\noutput: ')
             eval_input.append(item[0][7:])
             eval_output.append(item[1])
-        with open(f'Data/{data_name}-test/eval_input.json', 'w', encoding='utf-8') as file:
+        eval_test_dir = os.path.join(data_store_path, f'{data_name}-test')
+        os.makedirs(eval_test_dir, exist_ok=True)
+        with open(os.path.join(eval_test_dir, 'eval_input.json'), 'w', encoding='utf-8') as file:
             file.write(json.dumps(eval_input))
-        with open(f'Data/{data_name}-test/eval_output.json', 'w', encoding='utf-8') as file:
+        with open(os.path.join(eval_test_dir, 'eval_output.json'), 'w', encoding='utf-8') as file:
             file.write(json.dumps(eval_output))
     else:
         """
@@ -276,13 +292,15 @@ def split_dataset(data_name: str, split_ratio: int = 0.99, num_eval: int = 1000,
                 data = file.read()
             que = tokenizer.tokenize(data)[:max_que_len]
             eval_input.append(' '.join(que))
-        with open(f'Data/{data_name}-test/eval_input.json', 'w', encoding='utf-8') as file:
+        eval_test_dir = os.path.join(data_store_path, f'{data_name}-test')
+        os.makedirs(eval_test_dir, exist_ok=True)
+        with open(os.path.join(eval_test_dir, 'eval_input.json'), 'w', encoding='utf-8') as file:
             file.write(json.dumps(eval_input))
 
 
 def construct_retrieval_database(data_name_list: List[str],
                                  split_method: List[str] = None,
-                                 encoder_model_name: str = 'all-MiniLM-L6-v2',
+                                 encoder_model_name: str = None,
                                  retrival_database_batch_size: int = 256,
                                  chunk_size: int = 1500,
                                  chunk_overlap: int = 100,
@@ -333,7 +351,8 @@ def construct_retrieval_database(data_name_list: List[str],
             splitter_ = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         return splitter_
 
-    data_store_path = 'Data'
+    data_store_path = DATA_ROOT
+    encoder_model_name = encoder_model_name or EMBEDDING_MODEL_NAME
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     if split_method is None:
@@ -375,7 +394,7 @@ def construct_retrieval_database(data_name_list: List[str],
 
 
 def load_retrieval_database_from_address(store_path: str,
-                                         encoder_model_name: str = 'all-MiniLM-L6-v2',
+                                         encoder_model_name: str = None,
                                          retrival_database_batch_size: int = 512
                                          ) -> 'langchain.vectorstores.chroma.Chroma':
     """
@@ -391,6 +410,7 @@ def load_retrieval_database_from_address(store_path: str,
         The retrieval database must match the encoder model!
         if encode the database by 'all-MiniLM-L6-v2', can not load the database by 'bge-large-en-v1.5'
     """
+    encoder_model_name = encoder_model_name or EMBEDDING_MODEL_NAME
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     embed_model = get_embed_model(encoder_model_name, device, retrival_database_batch_size)
     retrieval_database = Chroma(
@@ -401,7 +421,7 @@ def load_retrieval_database_from_address(store_path: str,
 
 
 def load_retrieval_database_from_parameter(data_name_list: List[str],
-                                           encoder_model_name: str = 'all-MiniLM-L6-v2',
+                                           encoder_model_name: str = None,
                                            retrival_database_batch_size: int = 512
                                            ) -> 'langchain.vectorstores.chroma.Chroma':
     """
@@ -422,6 +442,7 @@ def load_retrieval_database_from_parameter(data_name_list: List[str],
     retrieval_name = '_'.join(data_name_list)
     if len(data_name_list) != 1:
         retrieval_name = 'mix_' + retrieval_name
+    encoder_model_name = encoder_model_name or EMBEDDING_MODEL_NAME
     store_path = f"./{database_store_path}/{retrieval_name}/{encoder_model_name}"
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     embed_model = get_embed_model(encoder_model_name, device, retrival_database_batch_size)
@@ -456,20 +477,30 @@ if __name__ == '__main__':
     """
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_name', type=str)
-    parser.add_argument('--encoder_model', type=str)
+    parser.add_argument('--encoder_model', type=str, default=EMBEDDING_MODEL_NAME)
     parser.add_argument('--flag_mix', type=bool, default=False)
     args = parser.parse_args()
     dataset_name = args.dataset_name
     encoder_model = args.encoder_model
     flag_mix = args.flag_mix
 
-    if dataset_name.find('body') != -1 and not os.path.exists('Data/enron-mail-body'):
+    if not dataset_name:
+        raise ValueError('dataset_name must be provided via --dataset_name')
+
+    enron_body_path = os.path.join(DATA_ROOT, 'enron-mail-body')
+    enron_strip_path = os.path.join(DATA_ROOT, 'enron-mail-strip')
+    dataset_dir = os.path.join(DATA_ROOT, dataset_name) if dataset_name else None
+
+    if not encoder_model:
+        encoder_model = EMBEDDING_MODEL_NAME
+
+    if dataset_name.find('body') != -1 and not os.path.exists(enron_body_path):
         pre_process_dataset('enron-mail', 'body')
-    if dataset_name.find('strip') != -1 and not os.path.exists('Data/enron-mail-strip'):
+    if dataset_name.find('strip') != -1 and not os.path.exists(enron_strip_path):
         pre_process_dataset('enron-mail', 'strip')
-    if dataset_name.find('train') != -1 and not os.path.exists(f'Data/{dataset_name}'):
+    if dataset_name.find('train') != -1 and dataset_dir and not os.path.exists(dataset_dir):
         split_dataset(dataset_name[:-6])
-    if dataset_name.find('test') != -1 and not os.path.exists(f'Data/{dataset_name}'):
+    if dataset_name.find('test') != -1 and dataset_dir and not os.path.exists(dataset_dir):
         split_dataset(dataset_name[:-5])
     if flag_mix is True:
         if dataset_name.find('enron-mail') != -1:
