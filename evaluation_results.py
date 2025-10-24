@@ -14,7 +14,7 @@ from matplotlib import colormaps
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
 from retrieval_database import find_all_file, get_encoding_of_file
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader
 
 """
@@ -95,20 +95,20 @@ def get_change_items(output_dir: str, flag_print: bool = True):
 
 def get_data(path, ckpt_dir, temperature, top_p, max_seq_len, max_gen_len):
     # if output not exist, return is question
-    r_path = f"./Inputs&Outputs/{path}/outputs-{ckpt_dir}-{temperature}-{top_p}-{max_seq_len}-{max_gen_len}.json"
+    r_path = f"./{path}/outputs-{ckpt_dir}-{temperature}-{top_p}-{max_seq_len}-{max_gen_len}.json"
     if not os.path.exists(r_path):
-        r_path = f"./Inputs&Outputs/{path}/question.json"
+        r_path = f"./{path}/question.json"
     with open(r_path, 'r', encoding='utf-8') as f:
         outputs = json.load(f)
     if not os.path.exists(r_path):
         outputs = len(outputs)
-    with open(f'./Inputs&Outputs/{path}/context.json', 'r', encoding='utf-8') as f:
+    with open(f'./{path}/context.json', 'r', encoding='utf-8') as f:
         contexts = json.load(f)
-    with open(f'./Inputs&Outputs/{path}/sources.json', 'r', encoding='utf-8') as f:
+    with open(f'./{path}/sources.json', 'r', encoding='utf-8') as f:
         sources = json.load(f)
-    with open(f'./Inputs&Outputs/{path}/question.json', 'r', encoding='utf-8') as f:
+    with open(f'./{path}/question.json', 'r', encoding='utf-8') as f:
         question = json.load(f)
-    with open(f'./Inputs&Outputs/{path}/prompts.json', 'r', encoding='utf-8') as f:
+    with open(f'./{path}/prompts.json', 'r', encoding='utf-8') as f:
         prompts = json.load(f)
 
     if type(contexts[0]) is list:
@@ -246,7 +246,7 @@ def get_embedding(exp_name, output_path, embed_model, set_retrieval, get_random_
     if get_random_context:
         if not os.path.exists(rf'Inputs&Outputs/random-context-embedding/enron-{embed_model}.pt'):
             if not os.path.exists(rf'Inputs&Outputs/random-context-embedding/enron.txt'):
-                path = f'Data/enron-mail'
+                path = f'Data1/enron-mail'
                 documents = []
                 for file in find_all_file(path):
                     # detect the encode method of files:
@@ -270,7 +270,7 @@ def get_embedding(exp_name, output_path, embed_model, set_retrieval, get_random_
             torch.save(context_dict, f'Inputs&Outputs/random-context-embedding/enron-{embed_model}.pt')
         if not os.path.exists(rf'Inputs&Outputs/random-context-embedding/chat-{embed_model}.pt'):
             if not os.path.exists(rf'Inputs&Outputs/random-context-embedding/chat.txt'):
-                with open('Data/chatdoctor/chatdoctor.txt', 'r', encoding='utf-8') as file:
+                with open('Data1/chatdoctor/chatdoctor.txt', 'r', encoding='utf-8') as file:
                     data = file.read()
                 contexts_all = data.split('\n\n')
                 random.shuffle(contexts_all)
@@ -288,7 +288,7 @@ def get_embedding(exp_name, output_path, embed_model, set_retrieval, get_random_
 
         if not os.path.exists(rf'Inputs&Outputs/random-context-embedding/wiki-{embed_model}.pt'):
             if not os.path.exists(rf'Inputs&Outputs/random-context-embedding/wiki.txt'):
-                path = f'Data/wikitext-103'
+                path = f'Data1/wikitext-103'
                 documents = []
                 for file in find_all_file(path):
                     # detect the encode method of files:
